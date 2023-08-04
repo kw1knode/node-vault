@@ -1,0 +1,105 @@
+version: '3.8'
+
+networks:
+  monitor-net:
+    driver: bridge
+
+volumes:
+    traefik_letsencrypt: {}
+    reth_data: {}
+    reth_logs: {}
+    lighthouse_data: {}
+
+services:
+
+######################################################################################
+#####################         TRAEFIK PROXY CONTAINER          #######################
+######################################################################################     
+
+  traefik:
+    image: traefik:latest
+    container_name: traefik
+    restart: always
+    ports:
+      - "443:443"
+    command:
+      - "--api=true"
+      - "--api.insecure=true"
+      - "--api.dashboard=true"
+      - "--log.level=DEBUG"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
+      - "--certificatesresolvers.myresolver.acme.email=$EMAIL"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+    volumes:
+      - "traefik_letsencrypt:/letsencrypt"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.middlewares.ipwhitelist.ipwhitelist.sourcerange=$WHITELIST"
+
+######################################################################################
+#####################             RETH CONTAINER               #######################
+###################################################################################### 
+
+  reth:
+    image: ghcr.io/paradigmxyz/reth
+    container_name: reth
+    restart: unless-stopped
+    expose:
+      - "8545" #rpc
+      - "8551" #auth
+      - "9001" #metrics
+    ports:
+      - "30303:30303" # peering
+    command: >
+      node
+      --chain mainnet
+      --metrics 0.0.0.0:9091
+      --log.persistent
+      --log.directory /root/rethlogs
+      --authrpc.addr 0.0.0.0
+      --authrpc.port 8551
+      --authrpc.jwtsecret /root/jwt/jwt.hex
+      --http --http.addr 0.0.0.0 --http.port 8545
+      --http.api "eth,net,web3"
+    volumes:
+      - reth_data:/root/.local/share/reth/mainnet/db
+      - reth_logs:/root/rethlogs
+      - ./jwt.hex:/root/jwt/jwt.hex:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.middlewares.reth-stripprefix.stripprefix.prefixes=/eth-mainnet"
+      - "traefik.http.services.reth.loadbalancer.server.port=8545"
+      - "traefik.http.routers.reth.entrypoints=websecure"
+      - "traefik.http.routers.reth.tls.certresolver=myresolver"
+      - "traefik.http.routers.reth.rule=Host(`$DOMAIN`) && PathPrefix(`/eth-mainnet`)"
+      - "traefik.http.routers.reth.middlewares=arbitrum-stripprefix, ipwhitelist"
+
+######################################################################################
+#####################            LIGHTHOUSE CONTAINER               ##################
+###################################################################################### 
+
+  lighthouse:
+    image: sigp/lighthouse
+    container_name: lighthouse
+    restart: unless-stopped
+    expose:
+      - "5052/tcp" #rpc
+      - "5053/tcp"
+      - "5054/tcp" #metrics
+    ports:
+     - "9000:9000/tcp" # peering
+     - "9000:9000/udp"
+    command: >
+      lighthouse bn
+      --http --http-address 0.0.0.0
+      --execution-endpoint http://reth:8551
+      --metrics --metrics-address 0.0.0.0
+      --execution-jwt /root/jwt/jwt.hex
+      --checkpoint-sync-url https://mainnet.checkpoint.sigp.io
+    volumes:
+      - lighthouse_data:/root/.lighthouse
+      - ./jwt.hex:/root/jwt/jwt.hex:ro
