@@ -1,0 +1,69 @@
+version: '3.8'
+
+networks:
+  monitor-net:
+    driver: bridge
+
+volumes:
+  avax_data: {}
+
+services:
+
+######################################################################################
+#####################         TRAEFIK PROXY CONTAINER          #######################
+######################################################################################     
+
+  traefik:
+    image: traefik:latest
+    container_name: traefik
+    restart: always
+    ports:
+      - "443:443"
+    networks:
+      - monitor-net
+    command:
+      - "--api=true"
+      - "--api.insecure=true"
+      - "--api.dashboard=true"
+      - "--log.level=DEBUG"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
+      - "--certificatesresolvers.myresolver.acme.email=$EMAIL"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+    volumes:
+      - "traefik_letsencrypt:/letsencrypt"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.middlewares.ipwhitelist.ipwhitelist.sourcerange=$WHITELIST"
+
+######################################################################################
+#####################               AVAX CONTAINER             #######################
+######################################################################################     
+
+  avax:
+    image: avaplatform/avalanchego:v1.10.7
+    container_name: avax
+    restart: unless-stopped
+    expose:
+      - "9650" #rpc
+      - "9650" #/ext/metrics
+    ports:
+      - "9651:9651/tcp"
+      - "9651:9651/udp"
+    networks:
+      - monitor-net
+    command:
+      - "/avalanchego/build/avalanchego --http-host="
+    volumes:
+      - avax_data:/root/.avalanchego
+      - ./archive-config.json:/root/.avalanchego/configs/chains/C/config.json
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.arbitrum.loadbalancer.server.port=9650"
+      - "traefik.http.routers.arbitrum.entrypoints=websecure"
+      - "traefik.http.routers.arbitrum.tls.certresolver=myresolver"
+      - "traefik.http.routers.arbitrum.rule=Host(`$DOMAIN`)"
+      - "traefik.http.routers.arbitrum.middlewares=ipwhitelist"
