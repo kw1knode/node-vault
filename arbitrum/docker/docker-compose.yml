@@ -1,0 +1,103 @@
+version: '3.8'
+
+networks:
+  monitor-net:
+    driver: bridge
+
+volumes:
+  arbitrum-nitro: {}
+  arbitrum-classic: {}
+  traefik_letsencrypt: {}
+
+services:
+
+######################################################################################
+#####################         TRAEFIK PROXY CONTAINER          #######################
+######################################################################################     
+
+  traefik:
+    image: traefik:latest
+    container_name: traefik
+    restart: always
+    ports:
+      - "443:443"
+    networks:
+      - monitor-net
+    command:
+      - "--api=true"
+      - "--api.insecure=true"
+      - "--api.dashboard=true"
+      - "--log.level=DEBUG"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
+      - "--certificatesresolvers.myresolver.acme.email=$EMAIL"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+    volumes:
+      - "traefik_letsencrypt:/letsencrypt"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.middlewares.ipwhitelist.ipwhitelist.sourcerange=$WHITELIST"
+
+######################################################################################
+#####################         ARBITRUM NITRO CONTAINER          ######################
+###################################################################################### 
+
+  arbitrum-nitro:
+    image: 'offchainlabs/nitro-node:v2.0.14-2baa834-slim-amd64'
+    container_name: nitro
+    restart: unless-stopped
+    stop_grace_period: 30s
+    expose:
+      - 8547
+      - 8548
+    networks:
+      - monitor-net
+    volumes:
+      - 'arbitrum-nitro:/home/user/.arbitrum'
+    command:
+      - --init.url=https://snapshot.arbitrum.foundation/arb1/nitro-archive.tar
+      - --node.caching.archive
+      - --node.rpc.classic-redirect=http://arbitrum-classic:8547/
+      - --l1.url=${ARBITRUM_L1_URL}
+      - --l2.chain-id=42161
+      - --http.api=net,web3,eth,debug
+      - --http.corsdomain=*
+      - --http.addr=0.0.0.0
+      - --http.vhosts=*
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.arbitrum.loadbalancer.server.port=8547"
+      - "traefik.http.routers.arbitrum.entrypoints=websecure"
+      - "traefik.http.routers.arbitrum.tls.certresolver=myresolver"
+      - "traefik.http.routers.arbitrum.rule=Host(`$ARB_HOST`)"
+      - "traefik.http.routers.arbitrum.middlewares=ipwhitelist"
+
+######################################################################################
+#####################         ARBITRUM CLASSIC CONTAINER          ####################
+######################################################################################
+
+  arbitrum-classic:
+    image: 'kw1k/arbnode:latest'
+    container_name: classic
+    restart: always
+    stop_grace_period: 30s
+    volumes:
+    - 'arbitrum-classic:/home/user/.arbitrum/mainnet'
+    expose:
+      - 8547
+      - 8548
+    command:
+      - --l1.url=${ARBITRUM_L1_URL}
+      - --l2.disable-upstream
+      - --node.chain-id=42161
+      - --node.rpc.tracing.enable
+      - --node.rpc.tracing.namespace=trace
+      - --core.checkpoint-pruning-mode=off
+      - --node.cache.allow-slow-lookup
+      - --core.checkpoint-gas-frequency=156250000
+      - --node.rpc.addr=0.0.0.0
+      - --l2.final-classic-block=22207816
+    restart: unless-stopped

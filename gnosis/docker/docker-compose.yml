@@ -1,0 +1,115 @@
+version: '3.8'
+
+networks:
+  monitor-net:
+    driver: bridge
+
+volumes:
+    traefik_letsencrypt: {}
+    nethermind_data: {}
+    lighthouse_data: {}
+
+services:
+
+######################################################################################
+#####################         TRAEFIK PROXY CONTAINER          #######################
+######################################################################################     
+
+  traefik:
+    image: traefik:latest
+    container_name: traefik
+    restart: always
+    ports:
+      - "443:443"
+    networks:
+      - monitor-net
+    command:
+      - "--api=true"
+      - "--api.insecure=true"
+      - "--api.dashboard=true"
+      - "--log.level=DEBUG"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
+      - "--certificatesresolvers.myresolver.acme.email=$EMAIL"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+    volumes:
+      - "traefik_letsencrypt:/letsencrypt"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.middlewares.ipwhitelist.ipwhitelist.sourcerange=$WHITELIST"
+
+######################################################################################
+#####################             NETHERMIND CONTAINER         #######################
+###################################################################################### 
+
+  nethermind:
+    image: nethermind/nethermind:1.20.1
+    container_name: nethermind
+    restart: unless-stopped
+    expose:
+      - "8545" #rpc
+      - "8551" #auth
+      - "6060" #metrics
+      - "9090" #api
+    ports:
+      - 30303:30303 #p2p
+      - 30303:30303/udp #p2p
+    networks:
+      - monitor-net
+    command:
+      --config=xdai_archive
+      --datadir=/data
+      --JsonRpc.Host=0.0.0.0
+      --JsonRpc.Port=8545
+      --JsonRpc.EngineHost=0.0.0.0
+      --JsonRpc.Timeout 20000
+      --JsonRpc.EnabledModules=['Eth, Subscribe, Trace, TxPool, Web3, Personal, Proof, Net, Parity, Health, Rpc']
+      --JsonRpc.JwtSecretFile=/jwt.hex
+      --TraceStore.Enabled=true
+      --TraceStore.BlocksToKeep=0
+      --TraceStore.TraceTypes=Trace,Rewards
+      --log=INFO
+      --Metrics.Enabled true
+      --HealthChecks.Enabled=false
+    volumes:
+      - nethermind_data:/data
+      - ./jwt.hex:/jwt.hex:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.nethermind.loadbalancer.server.port=8545"
+      - "traefik.http.routers.nethermind.entrypoints=websecure"
+      - "traefik.http.routers.nethermind.tls.certresolver=myresolver"
+      - "traefik.http.routers.nethermind.rule=Host(`$DOMAIN`)"
+      - "traefik.http.routers.erigon.middlewares=ipwhitelist"
+
+######################################################################################
+#####################            LIGHTHOUSE CONTAINER               ##################
+###################################################################################### 
+
+  lighthouse:
+    image: sigp/lighthouse:v4.3.0
+    container_name: lighthouse
+    restart: unless-stopped
+    expose:
+      - "5052/tcp" #http api
+      - "5054/tcp" #metrics
+    ports:
+     - "9000:9000/tcp" # peering
+     - "9000:9000/udp"
+    networks:
+     - monitor-net
+    command: >
+      lighthouse bn
+      --network=gnosis
+      --http --http-address 0.0.0.0
+      --disable-upnp
+      --execution-endpoint=http://nethermind:8551
+      --metrics --metrics-address 0.0.0.0
+      --execution-jwt=/jwt.hex
+      --checkpoint-sync-url=https://checkpoint.gnosis.gateway.fm/
+    volumes:
+      - lighthouse_data:/data
+      - ./jwt.hex:/jwt.hex:ro
