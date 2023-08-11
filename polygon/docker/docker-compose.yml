@@ -1,0 +1,137 @@
+version: '3.8'
+
+networks:
+  monitor-net:
+    driver: bridge
+
+volumes:
+    traefik_letsencrypt: {}
+
+services:
+
+######################################################################################
+#####################         TRAEFIK PROXY CONTAINER          #######################
+######################################################################################     
+
+  traefik:
+    image: traefik:latest
+    container_name: traefik
+    restart: always
+    ports:
+      - "443:443"
+    networks:
+      - monitor-net
+    command:
+      - "--api=true"
+      - "--api.insecure=true"
+      - "--api.dashboard=true"
+      - "--log.level=DEBUG"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
+      - "--certificatesresolvers.myresolver.acme.email=$EMAIL"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+    volumes:
+      - "traefik_letsencrypt:/letsencrypt"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.middlewares.ipwhitelist.ipwhitelist.sourcerange=$WHITELIST"
+
+######################################################################################
+#####################              ERIGON CONTAINER            #######################
+###################################################################################### 
+
+  erigon:
+    image: thorax/erigon:v2.48.1
+    container_name: erigon
+    restart: unless-stopped
+    expose:
+      - "8545" #rpc
+      - "8551" #auth
+      - "6060" #metrics
+      - "9090" #api
+    ports:
+      - 30303:30303 #p2p
+      - 30303:30303/udp #p2p
+      - 30304:30304 #p2p
+      - 30304:30304/udp #p2p
+      - 42069:42069 #torrent
+      - 42069:42069/udp #torrent
+      - 4000:4000/udp #lightclient discovery
+      - 4001:4001 #lightclient tcp
+    networks:
+      - monitor-net
+    command: >
+      --chain bor-mainnet
+      --bor.heimdall=http://heimdallr:1317
+      --torrent.download.rate 1024mb
+      --metrics
+      --metrics.addr 0.0.0.0
+      --metrics.port 6060
+      --http.addr 0.0.0.0
+      --http.port 8545
+      --http.vhosts *
+      --http.api eth,debug,net,trace
+      --db.pagesize 16kb
+      --batchSize 2048MB
+      --etl.bufferSize 512MB
+      --rpc.returndata.limit 1000000
+      --snapshots=false
+      --maxpeers 200
+      --sentry.drop-useless-peers=true
+      --db.size.limit=12TB
+    volumes:
+      - /var/lib/erigon:/home/erigon/.local/share/erigon
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.erigon.loadbalancer.server.port=8545"
+      - "traefik.http.routers.erigon.entrypoints=websecure"
+      - "traefik.http.routers.erigon.tls.certresolver=myresolver"
+      - "traefik.http.routers.erigon.rule=Host(`$DOMAIN`)"
+      - "traefik.http.routers.erigon.middlewares=ipwhitelist"
+    
+
+######################################################################################
+#####################              HEIMDALLD CONTAINER         #######################
+######################################################################################
+
+  heimdalld:
+    image: 0xpolygon/heimdall:0.3.4
+    container_name: heimdalld
+    restart: unless-stopped
+    expose:
+      - "26657" # RPC
+    ports:
+      - "26656:26656" # P2P
+    networks:
+      - monitor-net
+    command: |
+      - start
+      - --home /root/.heimdalld
+      - --p2p.laddr=tcp://0.0.0.0:26656
+      - --rpc.laddr=tcp://0.0.0.0:26657
+    volumes:
+      - /var/lib/heimdall:/root/.heimdalld:rw
+
+######################################################################################
+#####################              HEIMDALLR CONTAINER         #######################
+######################################################################################
+
+  heimdallr:
+    image: 0xpolygon/heimdall:0.3.4
+    container_name: heimdallr
+    restart: unless-stopped
+    expose:
+      - "1317" #REST
+    networks:
+      - monitor-net
+    command: |
+      - rest-server
+      - --home /root/.heimdalld
+      - --chain-id=137
+      - --laddr=tcp://0.0.0.0:1317
+      - --node=tcp://heimdalld:26657
+    volumes:
+      - /var/lib/heimdall:/root/.heimdalld:rw
