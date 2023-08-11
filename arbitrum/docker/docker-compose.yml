@@ -50,13 +50,14 @@ services:
     container_name: nitro
     restart: unless-stopped
     stop_grace_period: 30s
+    user: root
     expose:
       - 8547
       - 8548
     networks:
       - monitor-net
     volumes:
-      - 'arbitrum-nitro:/home/user/.arbitrum'
+      - 'arbitrum-nitro:/root/.arbitrum'
     command:
       - --init.url=https://snapshot.arbitrum.foundation/arb1/nitro-archive.tar
       - --node.caching.archive
@@ -82,10 +83,11 @@ services:
   arbitrum-classic:
     image: 'kw1k/arbnode:latest'
     container_name: classic
-    restart: always
+    restart: unless-stopped
     stop_grace_period: 30s
+    user: root
     volumes:
-    - 'arbitrum-classic:/home/user/.arbitrum/mainnet'
+    - 'arbitrum-classic:/root/.arbitrum/mainnet'
     expose:
       - 8547
       - 8548
