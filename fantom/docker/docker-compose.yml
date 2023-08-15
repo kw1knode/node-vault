@@ -1,0 +1,49 @@
+version: '3.8'
+
+networks:
+  monitor-net:
+    driver: bridge
+
+volumes:
+    fantom_data: {}
+    genesis_data: {}
+
+services:
+
+######################################################################################
+#####################            FANTOM ARCHIVE CONTAINER      #######################
+###################################################################################### 
+
+  fantom:
+    image: kw1k/opera:1.1.2-rc.6
+    container_name: fantom
+    restart: unless-stopped
+    expose:
+      - "18545" # RPC
+      - "18546" # WS
+    ports:
+      - "5050:5050" # P2P
+    networks:
+      - monitor-net
+    command:
+      --genesis=/genesis/mainnet-5577-full-mpt.g
+      --config=/usr/local/bin/config.toml
+      --port=5050
+      --maxpeers=200
+      --datadir=/root/data
+      --http
+      --http.addr=0.0.0.0
+      --http.port=18545
+      --http.corsdomain="*"
+      --http.vhosts="*"
+      --ws
+      --ws.addr=0.0.0.0
+      --ws.port=18546
+      --ws.origins="*"
+      --nousb
+      --db.preset=pbl-1
+      --tracenode
+      --http.api=eth,web3,net,ftm,trace
+    volumes:
+      - fantom_data:/root/data
+      - genesis_data:/genesis
