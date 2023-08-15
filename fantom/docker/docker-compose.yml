@@ -7,8 +7,40 @@ networks:
 volumes:
     fantom_data: {}
     genesis_data: {}
+    traefik_letsencrypt: {}
+    
 
 services:
+
+######################################################################################
+#####################         TRAEFIK PROXY CONTAINER          #######################
+######################################################################################     
+
+  traefik:
+    image: traefik:latest
+    container_name: traefik
+    restart: always
+    ports:
+      - "443:443"
+    networks:
+      - monitor-net
+    command:
+      - "--api=true"
+      - "--api.insecure=true"
+      - "--api.dashboard=true"
+      - "--log.level=DEBUG"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
+      - "--certificatesresolvers.myresolver.acme.email=$EMAIL"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+    volumes:
+      - "traefik_letsencrypt:/letsencrypt"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.middlewares.ipwhitelist.ipwhitelist.sourcerange=$WHITELIST"
 
 ######################################################################################
 #####################            FANTOM ARCHIVE CONTAINER      #######################
@@ -47,3 +79,10 @@ services:
     volumes:
       - fantom_data:/root/data
       - genesis_data:/genesis
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.fantom.loadbalancer.server.port=18545"
+      - "traefik.http.routers.fantom.entrypoints=websecure"
+      - "traefik.http.routers.fantom.tls.certresolver=myresolver"
+      - "traefik.http.routers.fantom.rule=Host(`$DOMAIN`)"
+      - "traefik.http.routers.fantom.middlewares=ipwhitelist"

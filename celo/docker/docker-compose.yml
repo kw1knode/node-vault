@@ -76,8 +76,8 @@ services:
       - celo_data:/root/.celo
     labels:
       - "traefik.enable=true"
-      - "traefik.http.services.erigon.loadbalancer.server.port=8545"
-      - "traefik.http.routers.erigon.entrypoints=websecure"
-      - "traefik.http.routers.erigon.tls.certresolver=myresolver"
-      - "traefik.http.routers.erigon.rule=Host(`$DOMAIN`)"
-      - "traefik.http.routers.erigon.middlewares=ipwhitelist"
+      - "traefik.http.services.celo.loadbalancer.server.port=8545"
+      - "traefik.http.routers.celo.entrypoints=websecure"
+      - "traefik.http.routers.celo.tls.certresolver=myresolver"
+      - "traefik.http.routers.celo.rule=Host(`$DOMAIN`)"
+      - "traefik.http.routers.celo.middlewares=ipwhitelist"

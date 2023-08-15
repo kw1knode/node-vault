@@ -6,6 +6,7 @@ networks:
 
 volumes:
   avax_data: {}
+  traefik_letsencrypt: {}
 
 services:
 
@@ -48,7 +49,7 @@ services:
     container_name: avax
     restart: unless-stopped
     expose:
-      - "9650" #rpc
+      - "9650" # RPC
       - "9650" #/ext/metrics
     ports:
       - "9651:9651/tcp"
@@ -62,8 +63,8 @@ services:
       - ./archive-config.json:/root/.avalanchego/configs/chains/C/config.json
     labels:
       - "traefik.enable=true"
-      - "traefik.http.services.arbitrum.loadbalancer.server.port=9650"
-      - "traefik.http.routers.arbitrum.entrypoints=websecure"
-      - "traefik.http.routers.arbitrum.tls.certresolver=myresolver"
-      - "traefik.http.routers.arbitrum.rule=Host(`$DOMAIN`)"
-      - "traefik.http.routers.arbitrum.middlewares=ipwhitelist"
+      - "traefik.http.services.avax.loadbalancer.server.port=9650"
+      - "traefik.http.routers.avax.entrypoints=websecure"
+      - "traefik.http.routers.avax.tls.certresolver=myresolver"
+      - "traefik.http.routers.avax.rule=Host(`$DOMAIN`)"
+      - "traefik.http.routers.avax.middlewares=ipwhitelist"
