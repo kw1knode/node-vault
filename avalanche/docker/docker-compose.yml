@@ -63,6 +63,7 @@ services:
       - ./archive-config.json:/root/.avalanchego/configs/chains/C/config.json
     labels:
       - "traefik.enable=true"
+      - "traefik.http.middlewares.avax-replacepath.replacepath.path=/ext/bc/C/rpc"
       - "traefik.http.services.avax.loadbalancer.server.port=9650"
       - "traefik.http.routers.avax.entrypoints=websecure"
       - "traefik.http.routers.avax.tls.certresolver=myresolver"
